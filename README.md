@@ -247,6 +247,17 @@ public partial class ProductQuery
 
 ---
 
+## Also by the same author
+
+| Package | Description |
+|---|---|
+| [**AutoWire**](https://github.com/Swevo/AutoWire) | Compile-time DI auto-registration — `[Scoped]`/`[Singleton]`/`[Transient]` generates `IServiceCollection` code. Zero reflection. |
+| [**AutoMap.Generator**](https://github.com/Swevo/AutoMap.Generator) | Compile-time object mapping — `[Map(typeof(Dto))]` generates `ToDto()` extension methods. Zero reflection, AOT-safe. |
+| [**AutoValidate.Generator**](https://github.com/Swevo/AutoValidate.Generator) | Compile-time FluentValidation wiring — discovers `AbstractValidator<T>` subclasses and generates `AddValidators()`. |
+| [**AutoResult.Generator**](https://github.com/Swevo/AutoResult.Generator) | Compile-time `Result<T>` monad — `[TryWrap]` generates `Try*()` wrappers for sync, async and void methods. |
+
+---
+
 ## License
 
 MIT.
