@@ -1,78 +1,538 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AutoQuery.Generator</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="AutoQuery.Generator — compile-time LINQ query specs for .NET using Roslyn source generators. Strongly-typed Apply(IQueryable&lt;T&gt;), zero reflection, AOT-safe." />
+  <title>AutoQuery.Generator — Compile-time LINQ query specs for .NET</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Prism.js syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-csharp.min.js" defer></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { DEFAULT: '#7c3aed', light: '#a78bfa', dark: '#5b21b6' },
+          },
+          fontFamily: { mono: ['"JetBrains Mono"', '"Fira Code"', 'monospace'] }
+        }
+      }
+    }
+  </script>
+
   <style>
-    :root { color-scheme: dark light; }
-    body { font-family: Arial, Helvetica, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
-    main { max-width: 960px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
-    h1 { font-size: 2.6rem; margin-bottom: .5rem; }
-    h2 { margin-top: 2.5rem; }
-    code, pre { font-family: Consolas, monospace; }
-    pre { background: #111827; padding: 1rem; border-radius: 12px; overflow-x: auto; }
-    a { color: #93c5fd; }
-    .hero { background: linear-gradient(135deg, #1d4ed8, #7c3aed); border-radius: 18px; padding: 2rem; box-shadow: 0 20px 40px rgba(0,0,0,.35); }
-    .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-top: 1.5rem; }
-    .card { background: rgba(15, 23, 42, .75); border: 1px solid rgba(148, 163, 184, .25); border-radius: 14px; padding: 1rem; }
-    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-    th, td { border-bottom: 1px solid rgba(148, 163, 184, .25); padding: .75rem; text-align: left; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+
+    .gradient-text {
+      background: linear-gradient(135deg, #7c3aed 0%, #a78bfa 50%, #06b6d4 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-bg {
+      background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(124,58,237,0.15) 0%, transparent 70%);
+    }
+
+    pre[class*="language-"] {
+      border-radius: 0.75rem !important;
+      font-size: 0.85rem !important;
+      margin: 0 !important;
+    }
+
+    .copy-btn {
+      position: absolute; top: 0.6rem; right: 0.75rem;
+      font-size: 0.7rem; padding: 0.2rem 0.55rem;
+      background: rgba(255,255,255,0.08); color: #a78bfa;
+      border: 1px solid rgba(167,139,250,0.25); border-radius: 0.375rem;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .copy-btn:hover { background: rgba(124,58,237,0.3); }
+
+    .feature-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.07);
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .feature-card:hover {
+      border-color: rgba(124,58,237,0.4);
+      transform: translateY(-2px);
+    }
   </style>
 </head>
-<body>
-  <main>
-    <section class="hero">
-      <h1>AutoQuery.Generator</h1>
-      <p>Compile-time query composition for <code>IQueryable&lt;T&gt;</code> using Roslyn incremental source generators.</p>
-      <p>
-        <a href="https://www.nuget.org/packages/AutoQuery.Generator">NuGet</a> ·
-        <a href="https://github.com/Swevo/AutoQuery.Generator">GitHub</a> ·
-        <a href="../README.md">README</a>
-      </p>
-    </section>
+<body class="bg-gray-950 text-gray-200 min-h-screen">
 
-    <section>
-      <h2>What it generates</h2>
-      <pre><code>[QuerySpec(typeof(Product))]
+  <!-- ─── NAV ─────────────────────────────────────────────────────────────── -->
+  <nav class="border-b border-white/5 sticky top-0 z-50 backdrop-blur bg-gray-950/90">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <span class="font-bold text-white text-lg tracking-tight">
+        <span class="text-brand">Auto</span>Query.Generator
+      </span>
+      <div class="flex items-center gap-6 text-sm text-gray-400">
+        <a href="#features" class="hover:text-white transition">Features</a>
+        <a href="#examples" class="hover:text-white transition">Examples</a>
+        <a href="#diagnostics" class="hover:text-white transition">Diagnostics</a>
+        <a href="#comparison" class="hover:text-white transition">Comparison</a>
+        <a href="https://github.com/Swevo/AutoQuery.Generator" target="_blank"
+           class="flex items-center gap-1.5 hover:text-white transition">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+          GitHub
+        </a>
+        <a href="https://www.nuget.org/packages/AutoQuery.Generator" target="_blank"
+           class="bg-brand text-white px-4 py-1.5 rounded-full text-sm font-medium hover:bg-brand-dark transition">
+          NuGet ↗
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ─── HERO ─────────────────────────────────────────────────────────────── -->
+  <section class="hero-bg pt-24 pb-20 px-6 text-center">
+    <div class="max-w-4xl mx-auto">
+      <div class="inline-flex items-center gap-2 bg-brand/10 border border-brand/20 text-brand-light text-xs font-medium px-3 py-1 rounded-full mb-8">
+        ⚡ Roslyn source generator · strongly-typed Apply(IQueryable&lt;T&gt;) · zero reflection · AOT-safe
+      </div>
+
+      <h1 class="text-5xl sm:text-6xl font-extrabold text-white leading-tight mb-6">
+        AutoQuery.Generator
+      </h1>
+
+      <p class="text-xl text-gray-400 max-w-2xl mx-auto mb-10 leading-relaxed">
+        Compile-time LINQ query specs for .NET
+      </p>
+
+      <!-- Install command -->
+      <div class="relative inline-flex items-center bg-gray-900 border border-white/10 rounded-xl px-5 py-3.5 mb-10 max-w-lg w-full">
+        <span class="text-gray-500 mr-3 select-none text-sm">$</span>
+        <code class="text-green-400 text-sm font-mono tracking-wide flex-1 text-left" id="install-cmd">
+          dotnet add package AutoQuery.Generator
+        </code>
+        <button onclick="copyInstall()" class="copy-btn" id="copy-install-btn">copy</button>
+      </div>
+
+      <div class="flex flex-wrap justify-center gap-3 mb-8">
+        <a href="https://www.nuget.org/packages/AutoQuery.Generator" target="_blank">
+          <img src="https://img.shields.io/nuget/v/AutoQuery.Generator.svg" alt="NuGet version" />
+        </a>
+        <a href="https://github.com/Swevo/AutoQuery.Generator/actions/workflows/build.yml" target="_blank">
+          <img src="https://github.com/Swevo/AutoQuery.Generator/actions/workflows/build.yml/badge.svg" alt="CI status" />
+        </a>
+      </div>
+
+      <div class="flex flex-wrap justify-center gap-3 mb-12">
+        <a href="https://www.nuget.org/packages/AutoQuery.Generator" target="_blank"
+           class="bg-brand text-white px-5 py-3 rounded-xl font-medium hover:bg-brand-dark transition">
+          View on NuGet
+        </a>
+        <a href="https://github.com/Swevo/AutoQuery.Generator" target="_blank"
+           class="bg-white/5 border border-white/10 text-white px-5 py-3 rounded-xl font-medium hover:bg-white/10 transition">
+          GitHub
+        </a>
+      </div>
+
+      <!-- Quick demo -->
+      <div class="grid md:grid-cols-2 gap-4 text-left max-w-4xl mx-auto">
+        <div class="relative">
+          <div class="text-xs text-gray-500 font-mono mb-2 pl-1">your query spec</div>
+          <pre><code class="language-csharp">using AutoQuery;
+
+[QuerySpec(typeof(Product))]
 public partial class ProductQuery
 {
     public string? Name { get; set; }
     public decimal? MinPrice { get; set; }
-    [QuerySort] public string? SortBy { get; set; }
-    public bool SortDescending { get; set; }
-    public int PageNumber { get; set; } = 1;
-    public int PageSize { get; set; } = 20;
+    public bool? IsActive { get; set; }
 }</code></pre>
-      <pre><code>var result = new ProductQuery { Name = "Laptop" }.Apply(products);</code></pre>
-    </section>
+        </div>
+        <div class="relative">
+          <div class="text-xs text-gray-500 font-mono mb-2 pl-1">generated at build time</div>
+          <pre><code class="language-csharp">// ✨ ProductQuery.AutoQuery.g.cs
+public partial class ProductQuery
+{
+    public IQueryable&lt;Product&gt; Apply(IQueryable&lt;Product&gt; query)
+    {
+        if (Name is not null)
+            query = query.Where(x => x.Name != null &amp;&amp; x.Name.Contains(Name));
+        if (MinPrice is not null)
+            query = query.Where(x => x.Price &gt;= MinPrice.Value);
+        if (IsActive is not null)
+            query = query.Where(x => x.IsActive == IsActive.Value);
+        return query;
+    }
+}</code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
 
-    <section class="grid">
-      <div class="card">
-        <h3>Zero reflection</h3>
-        <p>No runtime scanning. Everything is emitted at build time.</p>
-      </div>
-      <div class="card">
-        <h3>Composable LINQ</h3>
-        <p>Generated methods return <code>IQueryable&lt;T&gt;</code> so they chain naturally.</p>
-      </div>
-      <div class="card">
-        <h3>Convention + override</h3>
-        <p>Use nullable properties by convention or override with <code>[QueryFilter]</code>.</p>
-      </div>
-    </section>
+  <!-- ─── FEATURES ─────────────────────────────────────────────────────────── -->
+  <section id="features" class="py-24 px-6 bg-gray-950">
+    <div class="max-w-6xl mx-auto">
+      <h2 class="text-3xl font-bold text-white text-center mb-4">Everything you need</h2>
+      <p class="text-gray-400 text-center mb-16 max-w-xl mx-auto">
+        Define a partial spec once and let compile-time conventions generate the LINQ for filtering, paging, and sorting.
+      </p>
 
-    <section>
-      <h2>Diagnostics</h2>
-      <table>
-        <thead><tr><th>Id</th><th>Meaning</th></tr></thead>
-        <tbody>
-          <tr><td>AQ001</td><td>The <code>[QuerySpec]</code> entity type could not be resolved.</td></tr>
-          <tr><td>AQ002</td><td>The query spec class must be declared <code>partial</code>.</td></tr>
-          <tr><td>AQ003</td><td>The query spec has no filterable properties.</td></tr>
-        </tbody>
-      </table>
-    </section>
-  </main>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div class="feature-card rounded-2xl p-6">
+          <div class="text-3xl mb-4">🧠</div>
+          <h3 class="text-white font-semibold text-lg mb-2">Convention Filters</h3>
+          <p class="text-gray-400 text-sm leading-relaxed">
+            <code class="text-brand-light">string?</code> becomes <code class="text-brand-light">Contains</code>,
+            nullable value types become equality checks, and range naming like <code class="text-brand-light">MinPrice</code>
+            is generated automatically.
+          </p>
+        </div>
+
+        <div class="feature-card rounded-2xl p-6">
+          <div class="text-3xl mb-4">📄</div>
+          <h3 class="text-white font-semibold text-lg mb-2">Pagination Built-In</h3>
+          <p class="text-gray-400 text-sm leading-relaxed">
+            Add <code class="text-brand-light">PageNumber</code> and <code class="text-brand-light">PageSize</code>
+            and AutoQuery emits the <code class="text-brand-light">Skip().Take()</code> pipeline for you.
+          </p>
+        </div>
+
+        <div class="feature-card rounded-2xl p-6">
+          <div class="text-3xl mb-4">↕️</div>
+          <h3 class="text-white font-semibold text-lg mb-2">Sort Switch</h3>
+          <p class="text-gray-400 text-sm leading-relaxed">
+            A <code class="text-brand-light">[QuerySort]</code> string plus
+            <code class="text-brand-light">SortDescending</code> generates a compile-time switch expression for ordering.
+          </p>
+        </div>
+
+        <div class="feature-card rounded-2xl p-6">
+          <div class="text-3xl mb-4">✍️</div>
+          <h3 class="text-white font-semibold text-lg mb-2">Custom Expressions</h3>
+          <p class="text-gray-400 text-sm leading-relaxed">
+            Use <code class="text-brand-light">[QueryFilter("x.Price &gt; MinPrice")]</code> when you want an inline predicate
+            instead of the default property convention.
+          </p>
+        </div>
+
+        <div class="feature-card rounded-2xl p-6">
+          <div class="text-3xl mb-4">🚫</div>
+          <h3 class="text-white font-semibold text-lg mb-2">Zero Reflection</h3>
+          <p class="text-gray-400 text-sm leading-relaxed">
+            All LINQ is emitted at build time. No runtime reflection, no runtime expression building, and no dynamic behavior that breaks AOT.
+          </p>
+        </div>
+
+        <div class="feature-card rounded-2xl p-6">
+          <div class="text-3xl mb-4">🛡️</div>
+          <h3 class="text-white font-semibold text-lg mb-2">Roslyn Diagnostics</h3>
+          <p class="text-gray-400 text-sm leading-relaxed">
+            <code class="text-brand-light">AQ001</code>, <code class="text-brand-light">AQ002</code>, and
+            <code class="text-brand-light">AQ003</code> catch generator misuse while you build — not after you deploy.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── EXAMPLES ─────────────────────────────────────────────────────────── -->
+  <section id="examples" class="py-24 px-6 bg-gray-900/50">
+    <div class="max-w-5xl mx-auto">
+      <h2 class="text-3xl font-bold text-white text-center mb-4">Examples</h2>
+      <p class="text-gray-400 text-center mb-16 max-w-xl mx-auto">
+        From simple filters to paging, sorting, and custom predicates.
+      </p>
+
+      <!-- Tabs -->
+      <div class="flex flex-wrap gap-2 mb-8" id="tabs">
+        <button onclick="showTab(event, 'basic')" class="tab-btn active-tab px-4 py-2 rounded-lg text-sm font-medium">Basic Spec</button>
+        <button onclick="showTab(event, 'generated')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium">Generated Code</button>
+        <button onclick="showTab(event, 'paging')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium">Pagination &amp; Sorting</button>
+        <button onclick="showTab(event, 'custom')" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium">Custom Filters</button>
+      </div>
+
+      <style>
+        .tab-btn { color: #9ca3af; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); transition: all 0.15s; }
+        .tab-btn:hover { color: #e5e7eb; background: rgba(255,255,255,0.07); }
+        .active-tab { color: #a78bfa !important; background: rgba(124,58,237,0.15) !important; border-color: rgba(124,58,237,0.35) !important; }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+      </style>
+
+      <div id="tab-basic" class="tab-panel active relative">
+        <button onclick="copyCode('tab-basic')" class="copy-btn">copy</button>
+        <pre><code class="language-csharp">using AutoQuery;
+
+[QuerySpec(typeof(Product))]
+public partial class ProductQuery
+{
+    public string? Name { get; set; }       // → .Where(x => x.Name.Contains(Name))
+    public decimal? MinPrice { get; set; }  // → .Where(x => x.MinPrice &gt;= MinPrice)
+    public bool? IsActive { get; set; }     // → .Where(x => x.IsActive == IsActive)
+}
+
+// Usage:
+var query = new ProductQuery { Name = "Widget", IsActive = true };
+var results = await dbContext.Products
+    .Apply(query)
+    .ToListAsync();</code></pre>
+      </div>
+
+      <div id="tab-generated" class="tab-panel relative">
+        <button onclick="copyCode('tab-generated')" class="copy-btn">copy</button>
+        <pre><code class="language-csharp">// Auto-generated by AutoQuery.Generator
+public partial class ProductQuery
+{
+    public IQueryable&lt;Product&gt; Apply(IQueryable&lt;Product&gt; source)
+    {
+        if (Name is not null)
+            source = source.Where(x => x.Name.Contains(Name));
+        if (MinPrice is not null)
+            source = source.Where(x => x.Price &gt;= MinPrice.Value);
+        if (IsActive is not null)
+            source = source.Where(x => x.IsActive == IsActive.Value);
+        return source;
+    }
+}</code></pre>
+      </div>
+
+      <div id="tab-paging" class="tab-panel relative">
+        <button onclick="copyCode('tab-paging')" class="copy-btn">copy</button>
+        <pre><code class="language-csharp">[QuerySpec(typeof(Product))]
+public partial class ProductQuery
+{
+    public string? Name { get; set; }
+
+    [QuerySort]
+    public string? SortBy { get; set; }     // → switch expression on column name
+    public bool SortDescending { get; set; }
+
+    public int PageNumber { get; set; } = 1;
+    public int PageSize { get; set; } = 20; // → .Skip((PageNumber-1)*PageSize).Take(PageSize)
+}</code></pre>
+      </div>
+
+      <div id="tab-custom" class="tab-panel relative">
+        <button onclick="copyCode('tab-custom')" class="copy-btn">copy</button>
+        <pre><code class="language-csharp">[QuerySpec(typeof(Product))]
+public partial class ProductQuery
+{
+    public decimal? MinPrice { get; set; }
+    public decimal? MaxPrice { get; set; }
+
+    [QueryFilter("x.Price &gt;= MinPrice")]
+    public decimal? PriceFrom { get; set; }
+
+    [QueryFilter("x.Price &lt;= MaxPrice")]
+    public decimal? PriceTo { get; set; }
+
+    [QueryIgnore]
+    public string? InternalNotes { get; set; } // excluded from Apply()
+}</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── DIAGNOSTICS ───────────────────────────────────────────────────────── -->
+  <section id="diagnostics" class="py-24 px-6 bg-gray-950">
+    <div class="max-w-4xl mx-auto">
+      <h2 class="text-3xl font-bold text-white text-center mb-4">Build-time diagnostics</h2>
+      <p class="text-gray-400 text-center mb-12 max-w-xl mx-auto">
+        Misuse is surfaced by the compiler before your query ever runs.
+      </p>
+
+      <div class="overflow-x-auto rounded-2xl border border-white/7">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-white/7 bg-white/3">
+              <th class="text-left px-6 py-4 text-gray-300 font-semibold">Code</th>
+              <th class="text-left px-6 py-4 text-gray-300 font-semibold">Severity</th>
+              <th class="text-left px-6 py-4 text-gray-300 font-semibold">Description</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-white/5">
+            <tr class="hover:bg-white/2">
+              <td class="px-6 py-4 font-mono text-brand-light font-medium">AQ001</td>
+              <td class="px-6 py-4"><span class="text-red-400">⛔ Error</span></td>
+              <td class="px-6 py-4 text-gray-300"><code class="text-brand-light">[QuerySpec]</code> applied to a non-partial class</td>
+            </tr>
+            <tr class="hover:bg-white/2">
+              <td class="px-6 py-4 font-mono text-brand-light font-medium">AQ002</td>
+              <td class="px-6 py-4"><span class="text-yellow-400">⚠ Warning</span></td>
+              <td class="px-6 py-4 text-gray-300"><code class="text-brand-light">[QuerySpec]</code> class has no filterable properties</td>
+            </tr>
+            <tr class="hover:bg-white/2">
+              <td class="px-6 py-4 font-mono text-brand-light font-medium">AQ003</td>
+              <td class="px-6 py-4"><span class="text-yellow-400">⚠ Warning</span></td>
+              <td class="px-6 py-4 text-gray-300"><code class="text-brand-light">[QueryFilter]</code> expression is blank</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── COMPARISON ────────────────────────────────────────────────────────── -->
+  <section id="comparison" class="py-24 px-6 bg-gray-900/50">
+    <div class="max-w-5xl mx-auto">
+      <h2 class="text-3xl font-bold text-white text-center mb-4">Comparison</h2>
+      <p class="text-gray-400 text-center mb-12 max-w-xl mx-auto">
+        AutoQuery.Generator keeps the simplicity of plain LINQ while removing repetitive boilerplate.
+      </p>
+
+      <div class="overflow-x-auto rounded-2xl border border-white/7">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-white/7 bg-white/3">
+              <th class="text-left px-6 py-4 text-gray-300 font-semibold">Feature</th>
+              <th class="text-left px-6 py-4 text-brand-light font-semibold">AutoQuery.Generator</th>
+              <th class="text-left px-6 py-4 text-gray-300 font-semibold">Manual LINQ</th>
+              <th class="text-left px-6 py-4 text-gray-300 font-semibold">Ardalis.Specification</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-white/5 text-gray-300">
+            <tr class="hover:bg-white/2">
+              <td class="px-6 py-4">Compile-time generated <code class="text-brand-light">Apply</code></td>
+              <td class="px-6 py-4 text-green-400">✅</td>
+              <td class="px-6 py-4 text-red-400">❌</td>
+              <td class="px-6 py-4 text-red-400">❌</td>
+            </tr>
+            <tr class="hover:bg-white/2">
+              <td class="px-6 py-4">Convention filters from DTO properties</td>
+              <td class="px-6 py-4 text-green-400">✅</td>
+              <td class="px-6 py-4 text-red-400">❌</td>
+              <td class="px-6 py-4 text-red-400">❌</td>
+            </tr>
+            <tr class="hover:bg-white/2">
+              <td class="px-6 py-4">Zero reflection</td>
+              <td class="px-6 py-4 text-green-400">✅</td>
+              <td class="px-6 py-4 text-green-400">✅</td>
+              <td class="px-6 py-4 text-gray-300">Usually ✅</td>
+            </tr>
+            <tr class="hover:bg-white/2">
+              <td class="px-6 py-4">Built-in pagination generation</td>
+              <td class="px-6 py-4 text-green-400">✅</td>
+              <td class="px-6 py-4">Manual</td>
+              <td class="px-6 py-4">Manual</td>
+            </tr>
+            <tr class="hover:bg-white/2">
+              <td class="px-6 py-4">Built-in sort switch</td>
+              <td class="px-6 py-4 text-green-400">✅</td>
+              <td class="px-6 py-4">Manual</td>
+              <td class="px-6 py-4">Manual</td>
+            </tr>
+            <tr class="hover:bg-white/2">
+              <td class="px-6 py-4">AOT-safe</td>
+              <td class="px-6 py-4 text-green-400">✅</td>
+              <td class="px-6 py-4 text-green-400">✅</td>
+              <td class="px-6 py-4 text-green-400">✅</td>
+            </tr>
+            <tr class="hover:bg-white/2">
+              <td class="px-6 py-4">Runtime abstraction dependency</td>
+              <td class="px-6 py-4">None</td>
+              <td class="px-6 py-4">None</td>
+              <td class="px-6 py-4">Package dependency</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── ALSO BY THE SAME AUTHOR ───────────────────────────────────────────── -->
+  <section class="py-24 px-6 bg-gray-950">
+    <div class="max-w-5xl mx-auto">
+      <h2 class="text-3xl font-bold text-white text-center mb-4">Also by the same author</h2>
+      <p class="text-gray-400 text-center mb-16 max-w-xl mx-auto">
+        More compile-time tooling for .NET from Justin Bannister.
+      </p>
+
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <a href="https://swevo.github.io/" target="_blank" class="feature-card rounded-2xl p-6 block hover:no-underline">
+          <div class="text-3xl mb-4">🌐</div>
+          <h3 class="text-white font-semibold text-lg mb-2">Portfolio hub</h3>
+          <p class="text-gray-400 text-sm leading-relaxed">Explore the full suite of Swevo packages and documentation.</p>
+        </a>
+
+        <a href="https://github.com/Swevo/AutoWire" target="_blank" class="feature-card rounded-2xl p-6 block hover:no-underline">
+          <div class="text-3xl mb-4">🔌</div>
+          <h3 class="text-white font-semibold text-lg mb-2">AutoWire</h3>
+          <p class="text-gray-400 text-sm leading-relaxed">Compile-time dependency injection registration for .NET.</p>
+        </a>
+
+        <a href="https://github.com/Swevo/AutoMap.Generator" target="_blank" class="feature-card rounded-2xl p-6 block hover:no-underline">
+          <div class="text-3xl mb-4">🗺️</div>
+          <h3 class="text-white font-semibold text-lg mb-2">AutoMap.Generator</h3>
+          <p class="text-gray-400 text-sm leading-relaxed">
+            Compile-time object mapping —
+            <span class="text-brand-light">GitHub</span> ·
+            <span class="text-brand-light">Docs:</span> https://swevo.github.io/AutoMap.Generator/
+          </p>
+        </a>
+
+        <a href="https://github.com/Swevo/AutoValidate.Generator" target="_blank" class="feature-card rounded-2xl p-6 block hover:no-underline">
+          <div class="text-3xl mb-4">✅</div>
+          <h3 class="text-white font-semibold text-lg mb-2">AutoValidate.Generator</h3>
+          <p class="text-gray-400 text-sm leading-relaxed">
+            Compile-time FluentValidation wiring —
+            <span class="text-brand-light">GitHub</span> ·
+            <span class="text-brand-light">Docs:</span> https://swevo.github.io/AutoValidate.Generator/
+          </p>
+        </a>
+
+        <a href="https://github.com/Swevo/AutoResult.Generator" target="_blank" class="feature-card rounded-2xl p-6 block hover:no-underline">
+          <div class="text-3xl mb-4">🎯</div>
+          <h3 class="text-white font-semibold text-lg mb-2">AutoResult.Generator</h3>
+          <p class="text-gray-400 text-sm leading-relaxed">Generated result wrappers for cleaner exception-safe application code.</p>
+        </a>
+
+        <a href="https://github.com/Swevo/AutoDispatch.Generator" target="_blank" class="feature-card rounded-2xl p-6 block hover:no-underline">
+          <div class="text-3xl mb-4">📬</div>
+          <h3 class="text-white font-semibold text-lg mb-2">AutoDispatch.Generator</h3>
+          <p class="text-gray-400 text-sm leading-relaxed">Compile-time command and handler dispatch generation.</p>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── FOOTER ────────────────────────────────────────────────────────────── -->
+  <footer class="border-t border-white/5 py-12 px-6 text-center text-gray-500 text-sm">
+    <p class="mb-2">
+      MIT © Justin Bannister ·
+      <a href="https://github.com/Swevo/AutoQuery.Generator" class="text-brand-light hover:text-white transition">GitHub</a>
+      ·
+      <a href="https://www.nuget.org/packages/AutoQuery.Generator" class="text-brand-light hover:text-white transition">NuGet</a>
+    </p>
+    <p class="text-gray-600">
+      <span class="text-brand font-semibold">AutoQuery.Generator</span> — compile-time query composition for <code>IQueryable&lt;T&gt;</code>
+    </p>
+  </footer>
+
+  <script>
+    function copyInstall() {
+      navigator.clipboard.writeText('dotnet add package AutoQuery.Generator');
+      const btn = document.getElementById('copy-install-btn');
+      btn.textContent = 'copied!';
+      setTimeout(() => btn.textContent = 'copy', 2000);
+    }
+
+    function copyCode(tabId) {
+      const code = document.querySelector(`#${tabId} code`);
+      if (code) navigator.clipboard.writeText(code.textContent);
+    }
+
+    function showTab(event, name) {
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active-tab'));
+      document.getElementById('tab-' + name).classList.add('active');
+      event.currentTarget.classList.add('active-tab');
+    }
+  </script>
 </body>
 </html>
