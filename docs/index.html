@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AutoQuery.Generator</title>
+  <style>
+    :root { color-scheme: dark light; }
+    body { font-family: Arial, Helvetica, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
+    main { max-width: 960px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+    h1 { font-size: 2.6rem; margin-bottom: .5rem; }
+    h2 { margin-top: 2.5rem; }
+    code, pre { font-family: Consolas, monospace; }
+    pre { background: #111827; padding: 1rem; border-radius: 12px; overflow-x: auto; }
+    a { color: #93c5fd; }
+    .hero { background: linear-gradient(135deg, #1d4ed8, #7c3aed); border-radius: 18px; padding: 2rem; box-shadow: 0 20px 40px rgba(0,0,0,.35); }
+    .grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-top: 1.5rem; }
+    .card { background: rgba(15, 23, 42, .75); border: 1px solid rgba(148, 163, 184, .25); border-radius: 14px; padding: 1rem; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { border-bottom: 1px solid rgba(148, 163, 184, .25); padding: .75rem; text-align: left; }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <h1>AutoQuery.Generator</h1>
+      <p>Compile-time query composition for <code>IQueryable&lt;T&gt;</code> using Roslyn incremental source generators.</p>
+      <p>
+        <a href="https://www.nuget.org/packages/AutoQuery.Generator">NuGet</a> ·
+        <a href="https://github.com/Swevo/AutoQuery.Generator">GitHub</a> ·
+        <a href="../README.md">README</a>
+      </p>
+    </section>
+
+    <section>
+      <h2>What it generates</h2>
+      <pre><code>[QuerySpec(typeof(Product))]
+public partial class ProductQuery
+{
+    public string? Name { get; set; }
+    public decimal? MinPrice { get; set; }
+    [QuerySort] public string? SortBy { get; set; }
+    public bool SortDescending { get; set; }
+    public int PageNumber { get; set; } = 1;
+    public int PageSize { get; set; } = 20;
+}</code></pre>
+      <pre><code>var result = new ProductQuery { Name = "Laptop" }.Apply(products);</code></pre>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <h3>Zero reflection</h3>
+        <p>No runtime scanning. Everything is emitted at build time.</p>
+      </div>
+      <div class="card">
+        <h3>Composable LINQ</h3>
+        <p>Generated methods return <code>IQueryable&lt;T&gt;</code> so they chain naturally.</p>
+      </div>
+      <div class="card">
+        <h3>Convention + override</h3>
+        <p>Use nullable properties by convention or override with <code>[QueryFilter]</code>.</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>Diagnostics</h2>
+      <table>
+        <thead><tr><th>Id</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td>AQ001</td><td>The <code>[QuerySpec]</code> entity type could not be resolved.</td></tr>
+          <tr><td>AQ002</td><td>The query spec class must be declared <code>partial</code>.</td></tr>
+          <tr><td>AQ003</td><td>The query spec has no filterable properties.</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>
