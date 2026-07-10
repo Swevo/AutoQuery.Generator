@@ -9,7 +9,7 @@
 
 **Compile-time query composition for `IQueryable<T>` via Roslyn incremental source generators.**
 
-Add `[QuerySpec(typeof(Product))]` to a partial query class and AutoQuery.Generator emits a strongly-typed `Apply(IQueryable<Product>)` method at build time. No reflection. No runtime scanning. AOT-friendly.
+Add `[QuerySpec(typeof(Product))]` to a partial query class and AutoQuery.Generator emits strongly-typed `Apply(IQueryable<Product>)`, `BindFromQuery(...)`, and `FromQuery(...)` methods at build time. No reflection. No runtime scanning. AOT-friendly.
 
 ```csharp
 using AutoQuery;
@@ -35,6 +35,19 @@ var filtered = new ProductQuery
     PageNumber = 1,
     PageSize = 10,
 }.Apply(products);
+
+// Or bind directly from HTTP query-string values:
+var requestQuery = new Dictionary<string, string?>
+{
+    ["Name"] = "Laptop",
+    ["MinPrice"] = "500",
+    ["SortBy"] = "Name",
+    ["PageNumber"] = "1",
+    ["PageSize"] = "10"
+};
+
+var bound = ProductQuery.FromQuery(requestQuery);
+var filteredFromQuery = bound.Apply(products);
 ```
 
 ---
@@ -79,6 +92,42 @@ IQueryable<Product> query = dbContext.Products;
 var spec = new ProductQuery { Name = "Phone", MinPrice = 100, IsActive = true };
 var result = spec.Apply(query);
 ```
+
+### 3. Bind directly from query-string values
+
+```csharp
+using AutoQuery;
+
+[QuerySpec(typeof(Product))]
+public partial class ProductQuery
+{
+    public string? Name { get; set; }
+    public decimal? MinPrice { get; set; }
+    [QuerySort] public string? SortBy { get; set; }
+    public bool SortDescending { get; set; }
+    public int PageNumber { get; set; } = 1;
+    public int PageSize { get; set; } = 20;
+}
+
+// Works with Dictionary<string, string?>
+var query = ProductQuery.FromQuery(new Dictionary<string, string?>
+{
+    ["Name"] = "Laptop",
+    ["MinPrice"] = "500",
+    ["SortBy"] = "Name",
+    ["PageNumber"] = "1",
+    ["PageSize"] = "10"
+});
+
+// Also works with ASP.NET Core Request.Query without taking an ASP.NET Core package dependency.
+app.MapGet("/products", (AppDbContext db, HttpRequest request) =>
+{
+    var spec = ProductQuery.FromQuery(request.Query);
+    return spec.Apply(db.Products);
+});
+```
+
+Unknown keys are ignored, malformed values are skipped, and successful conversions use invariant culture for numeric/date parsing plus case-insensitive enum parsing.
 
 Generated output resembles:
 
@@ -223,6 +272,32 @@ public partial class ProductQuery
 
 ---
 
+## HTTP query-string binding
+
+For every `[QuerySpec]` class with writable supported properties, AutoQuery emits:
+
+```csharp
+public void BindFromQuery(IEnumerable<KeyValuePair<string, string?>> query);
+public void BindFromQuery<TValue>(IEnumerable<KeyValuePair<string, TValue>> query)
+    where TValue : IEnumerable<string>;
+
+public static ProductQuery FromQuery(IEnumerable<KeyValuePair<string, string?>> query);
+public static ProductQuery FromQuery<TValue>(IEnumerable<KeyValuePair<string, TValue>> query)
+    where TValue : IEnumerable<string>;
+```
+
+Supported property conversions:
+
+- `string`
+- numeric types and nullable numeric types
+- `bool` / `bool?`
+- `DateTime` / `DateTime?`
+- enums and nullable enums
+
+The generic overload is what lets `Request.Query` bind cleanly: `IQueryCollection` enumerates as `KeyValuePair<string, StringValues>`, and `StringValues` implements `IEnumerable<string>`, so no AutoQuery runtime dependency on ASP.NET Core is required.
+
+---
+
 ## Diagnostics
 
 | Id | Severity | Description |
@@ -238,6 +313,7 @@ public partial class ProductQuery
 | Capability | AutoQuery.Generator | Manual LINQ | Ardalis.Specification |
 |---|---|---|---|
 | Compile-time generated `Apply` method | ✅ | ❌ | ❌ |
+| Compile-time generated query-string binding | ✅ | ❌ | ❌ |
 | Reflection-free | ✅ | ✅ | Usually ✅ |
 | Convention filters from DTO-like class | ✅ | ❌ | ❌ |
 | Custom inline filter expressions | ✅ | Manual only | Via handwritten spec logic |

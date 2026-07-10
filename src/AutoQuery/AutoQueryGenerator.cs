@@ -118,6 +118,8 @@ public sealed class AutoQueryGenerator : IIncrementalGenerator
 
         var pageNumberProperty = properties.FirstOrDefault(static property => property.IsPageNumber);
         var pageSizeProperty = properties.FirstOrDefault(static property => property.IsPageSize);
+        var canInstantiate = !typeSymbol.IsAbstract &&
+                             typeSymbol.InstanceConstructors.Any(static constructor => constructor.Parameters.Length == 0);
 
         return new QuerySpecModel(
             typeSymbol.ContainingNamespace.IsGlobalNamespace ? null : typeSymbol.ContainingNamespace.ToDisplayString(),
@@ -130,7 +132,9 @@ public sealed class AutoQueryGenerator : IIncrementalGenerator
                 : entityType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
             GetHintName(typeSymbol),
             isPartial && entityType is not null && entityType.TypeKind != TypeKind.Error,
+            canInstantiate,
             diagnostics.ToImmutable(),
+            properties,
             filterProperties,
             sortProperty?.Name,
             descendingProperty?.Name,
@@ -159,6 +163,7 @@ public sealed class AutoQueryGenerator : IIncrementalGenerator
         var isDescendingFlag = property.Type.SpecialType == SpecialType.System_Boolean &&
                                (string.Equals(property.Name, "SortDescending", StringComparison.Ordinal) ||
                                 string.Equals(property.Name, "IsDescending", StringComparison.Ordinal));
+        var binding = CreateBindingModel(property, isIgnored);
 
         var filterKind = FilterKind.None;
         if (!isIgnored && !isSort && !isPageNumber && !isPageSize)
@@ -186,9 +191,57 @@ public sealed class AutoQueryGenerator : IIncrementalGenerator
             isPageSize,
             isDescendingFlag,
             isString,
+            binding.Kind,
+            binding.TypeName,
             queryFilterExpression,
             GetFilterTargetName(property.Name),
             GetFilterTargetName(property.Name));
+    }
+
+    private static BindingModel CreateBindingModel(IPropertySymbol property, bool isIgnored)
+    {
+        if (isIgnored ||
+            property.SetMethod is null ||
+            property.SetMethod.DeclaredAccessibility != Accessibility.Public ||
+            property.SetMethod.IsInitOnly)
+        {
+            return BindingModel.None;
+        }
+
+        if (property.Type.SpecialType == SpecialType.System_String)
+        {
+            return new BindingModel(BindingKind.String, null);
+        }
+
+        var targetType = property.Type;
+        if (property.Type is INamedTypeSymbol namedType &&
+            namedType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+        {
+            targetType = namedType.TypeArguments[0];
+        }
+
+        if (targetType.TypeKind == TypeKind.Enum)
+        {
+            return new BindingModel(BindingKind.Enum, targetType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+        }
+
+        return targetType.SpecialType switch
+        {
+            SpecialType.System_Boolean => new BindingModel(BindingKind.Boolean, null),
+            SpecialType.System_Byte => new BindingModel(BindingKind.Byte, null),
+            SpecialType.System_SByte => new BindingModel(BindingKind.SByte, null),
+            SpecialType.System_Int16 => new BindingModel(BindingKind.Int16, null),
+            SpecialType.System_UInt16 => new BindingModel(BindingKind.UInt16, null),
+            SpecialType.System_Int32 => new BindingModel(BindingKind.Int32, null),
+            SpecialType.System_UInt32 => new BindingModel(BindingKind.UInt32, null),
+            SpecialType.System_Int64 => new BindingModel(BindingKind.Int64, null),
+            SpecialType.System_UInt64 => new BindingModel(BindingKind.UInt64, null),
+            SpecialType.System_Single => new BindingModel(BindingKind.Single, null),
+            SpecialType.System_Double => new BindingModel(BindingKind.Double, null),
+            SpecialType.System_Decimal => new BindingModel(BindingKind.Decimal, null),
+            SpecialType.System_DateTime => new BindingModel(BindingKind.DateTime, null),
+            _ => BindingModel.None,
+        };
     }
 
     private static void Emit(SourceProductionContext context, QuerySpecModel model)
@@ -269,6 +322,72 @@ public sealed class AutoQueryGenerator : IIncrementalGenerator
 
         builder.Append(indent).AppendLine("        return query;");
         builder.Append(indent).AppendLine("    }");
+        builder.AppendLine();
+        builder.Append(indent).AppendLine("    public void BindFromQuery(global::System.Collections.Generic.IEnumerable<global::System.Collections.Generic.KeyValuePair<string, string?>> query)");
+        builder.Append(indent).AppendLine("    {");
+        builder.Append(indent).AppendLine("        foreach (var item in query)");
+        builder.Append(indent).AppendLine("        {");
+        builder.Append(indent).AppendLine("            ApplyQueryValue(item.Key, item.Value);");
+        builder.Append(indent).AppendLine("        }");
+        builder.Append(indent).AppendLine("    }");
+        builder.AppendLine();
+        builder.Append(indent).AppendLine("    public void BindFromQuery<TValue>(global::System.Collections.Generic.IEnumerable<global::System.Collections.Generic.KeyValuePair<string, TValue>> query)");
+        builder.Append(indent).AppendLine("        where TValue : global::System.Collections.Generic.IEnumerable<string>");
+        builder.Append(indent).AppendLine("    {");
+        builder.Append(indent).AppendLine("        foreach (var item in query)");
+        builder.Append(indent).AppendLine("        {");
+        builder.Append(indent).AppendLine("            if (TryGetFirstQueryValue(item.Value, out var value))");
+        builder.Append(indent).AppendLine("            {");
+        builder.Append(indent).AppendLine("                ApplyQueryValue(item.Key, value);");
+        builder.Append(indent).AppendLine("            }");
+        builder.Append(indent).AppendLine("        }");
+        builder.Append(indent).AppendLine("    }");
+
+        if (model.CanInstantiate)
+        {
+            builder.AppendLine();
+            builder.Append(indent).Append("    public static ").Append(model.TypeName).Append(model.TypeParameters).AppendLine(" FromQuery(global::System.Collections.Generic.IEnumerable<global::System.Collections.Generic.KeyValuePair<string, string?>> query)");
+            builder.Append(indent).AppendLine("    {");
+            builder.Append(indent).Append("        var result = new ").Append(model.TypeName).Append(model.TypeParameters).AppendLine("();");
+            builder.Append(indent).AppendLine("        result.BindFromQuery(query);");
+            builder.Append(indent).AppendLine("        return result;");
+            builder.Append(indent).AppendLine("    }");
+            builder.AppendLine();
+            builder.Append(indent).Append("    public static ").Append(model.TypeName).Append(model.TypeParameters).AppendLine(" FromQuery<TValue>(global::System.Collections.Generic.IEnumerable<global::System.Collections.Generic.KeyValuePair<string, TValue>> query)");
+            builder.Append(indent).AppendLine("        where TValue : global::System.Collections.Generic.IEnumerable<string>");
+            builder.Append(indent).AppendLine("    {");
+            builder.Append(indent).Append("        var result = new ").Append(model.TypeName).Append(model.TypeParameters).AppendLine("();");
+            builder.Append(indent).AppendLine("        result.BindFromQuery(query);");
+            builder.Append(indent).AppendLine("        return result;");
+            builder.Append(indent).AppendLine("    }");
+        }
+
+        builder.AppendLine();
+        builder.Append(indent).AppendLine("    private void ApplyQueryValue(string key, string? value)");
+        builder.Append(indent).AppendLine("    {");
+        foreach (var property in model.Properties.Where(static property => property.BindingKind != BindingKind.None))
+        {
+            builder.Append(indent).Append("        if (global::System.StringComparer.OrdinalIgnoreCase.Equals(key, \"").Append(property.Name).AppendLine("\"))");
+            builder.Append(indent).AppendLine("        {");
+            AppendBindingAssignment(builder, indent, property);
+            builder.Append(indent).AppendLine("            return;");
+            builder.Append(indent).AppendLine("        }");
+            builder.AppendLine();
+        }
+
+        builder.Append(indent).AppendLine("    }");
+        builder.AppendLine();
+        builder.Append(indent).AppendLine("    private static bool TryGetFirstQueryValue(global::System.Collections.Generic.IEnumerable<string> values, out string? value)");
+        builder.Append(indent).AppendLine("    {");
+        builder.Append(indent).AppendLine("        foreach (var item in values)");
+        builder.Append(indent).AppendLine("        {");
+        builder.Append(indent).AppendLine("            value = item;");
+        builder.Append(indent).AppendLine("            return true;");
+        builder.Append(indent).AppendLine("        }");
+        builder.AppendLine();
+        builder.Append(indent).AppendLine("        value = null;");
+        builder.Append(indent).AppendLine("        return false;");
+        builder.Append(indent).AppendLine("    }");
         builder.Append(indent).AppendLine("}");
 
         if (!string.IsNullOrWhiteSpace(model.Namespace))
@@ -277,6 +396,65 @@ public sealed class AutoQueryGenerator : IIncrementalGenerator
         }
 
         return builder.ToString();
+    }
+
+    private static void AppendBindingAssignment(StringBuilder builder, string indent, PropertyModel property)
+    {
+        switch (property.BindingKind)
+        {
+            case BindingKind.String:
+                builder.Append(indent).AppendLine("            if (value is not null)");
+                builder.Append(indent).Append("                ").Append(property.Name).AppendLine(" = value;");
+                break;
+            case BindingKind.Boolean:
+                AppendTryParse(builder, indent, property, "global::System.Boolean.TryParse(value, out var parsed)");
+                break;
+            case BindingKind.Byte:
+                AppendTryParse(builder, indent, property, "global::System.Byte.TryParse(value, global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var parsed)");
+                break;
+            case BindingKind.SByte:
+                AppendTryParse(builder, indent, property, "global::System.SByte.TryParse(value, global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var parsed)");
+                break;
+            case BindingKind.Int16:
+                AppendTryParse(builder, indent, property, "global::System.Int16.TryParse(value, global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var parsed)");
+                break;
+            case BindingKind.UInt16:
+                AppendTryParse(builder, indent, property, "global::System.UInt16.TryParse(value, global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var parsed)");
+                break;
+            case BindingKind.Int32:
+                AppendTryParse(builder, indent, property, "global::System.Int32.TryParse(value, global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var parsed)");
+                break;
+            case BindingKind.UInt32:
+                AppendTryParse(builder, indent, property, "global::System.UInt32.TryParse(value, global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var parsed)");
+                break;
+            case BindingKind.Int64:
+                AppendTryParse(builder, indent, property, "global::System.Int64.TryParse(value, global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var parsed)");
+                break;
+            case BindingKind.UInt64:
+                AppendTryParse(builder, indent, property, "global::System.UInt64.TryParse(value, global::System.Globalization.NumberStyles.Integer, global::System.Globalization.CultureInfo.InvariantCulture, out var parsed)");
+                break;
+            case BindingKind.Single:
+                AppendTryParse(builder, indent, property, "global::System.Single.TryParse(value, global::System.Globalization.NumberStyles.Float | global::System.Globalization.NumberStyles.AllowThousands, global::System.Globalization.CultureInfo.InvariantCulture, out var parsed)");
+                break;
+            case BindingKind.Double:
+                AppendTryParse(builder, indent, property, "global::System.Double.TryParse(value, global::System.Globalization.NumberStyles.Float | global::System.Globalization.NumberStyles.AllowThousands, global::System.Globalization.CultureInfo.InvariantCulture, out var parsed)");
+                break;
+            case BindingKind.Decimal:
+                AppendTryParse(builder, indent, property, "global::System.Decimal.TryParse(value, global::System.Globalization.NumberStyles.Number, global::System.Globalization.CultureInfo.InvariantCulture, out var parsed)");
+                break;
+            case BindingKind.DateTime:
+                AppendTryParse(builder, indent, property, "global::System.DateTime.TryParse(value, global::System.Globalization.CultureInfo.InvariantCulture, global::System.Globalization.DateTimeStyles.RoundtripKind | global::System.Globalization.DateTimeStyles.AllowWhiteSpaces, out var parsed)");
+                break;
+            case BindingKind.Enum:
+                AppendTryParse(builder, indent, property, "global::System.Enum.TryParse<" + property.BindingTypeName + ">(value, true, out var parsed)");
+                break;
+        }
+    }
+
+    private static void AppendTryParse(StringBuilder builder, string indent, PropertyModel property, string tryParseExpression)
+    {
+        builder.Append(indent).Append("            if (").Append(tryParseExpression).AppendLine(")");
+        builder.Append(indent).Append("                ").Append(property.Name).AppendLine(" = parsed;");
     }
 
     private static bool HasAttribute(IPropertySymbol property, string fullName)
@@ -354,7 +532,9 @@ public sealed class AutoQueryGenerator : IIncrementalGenerator
             string entityTypeName,
             string hintName,
             bool canGenerate,
+            bool canInstantiate,
             ImmutableArray<Diagnostic> diagnostics,
+            ImmutableArray<PropertyModel> properties,
             ImmutableArray<PropertyModel> filterProperties,
             string? sortPropertyName,
             string? descendingPropertyName,
@@ -368,7 +548,9 @@ public sealed class AutoQueryGenerator : IIncrementalGenerator
             EntityTypeName = entityTypeName;
             HintName = hintName;
             CanGenerate = canGenerate;
+            CanInstantiate = canInstantiate;
             Diagnostics = diagnostics;
+            Properties = properties;
             FilterProperties = filterProperties;
             SortPropertyName = sortPropertyName;
             DescendingPropertyName = descendingPropertyName;
@@ -383,7 +565,9 @@ public sealed class AutoQueryGenerator : IIncrementalGenerator
         public string EntityTypeName { get; }
         public string HintName { get; }
         public bool CanGenerate { get; }
+        public bool CanInstantiate { get; }
         public ImmutableArray<Diagnostic> Diagnostics { get; }
+        public ImmutableArray<PropertyModel> Properties { get; }
         public ImmutableArray<PropertyModel> FilterProperties { get; }
         public string? SortPropertyName { get; }
         public string? DescendingPropertyName { get; }
@@ -403,6 +587,8 @@ public sealed class AutoQueryGenerator : IIncrementalGenerator
             bool isPageSize,
             bool isDescendingFlag,
             bool isString,
+            BindingKind bindingKind,
+            string? bindingTypeName,
             string? customExpression,
             string filterTargetName,
             string sortTargetName)
@@ -415,6 +601,8 @@ public sealed class AutoQueryGenerator : IIncrementalGenerator
             IsPageSize = isPageSize;
             IsDescendingFlag = isDescendingFlag;
             IsString = isString;
+            BindingKind = bindingKind;
+            BindingTypeName = bindingTypeName;
             CustomExpression = customExpression;
             FilterTargetName = filterTargetName;
             SortTargetName = sortTargetName;
@@ -428,9 +616,25 @@ public sealed class AutoQueryGenerator : IIncrementalGenerator
         public bool IsPageSize { get; }
         public bool IsDescendingFlag { get; }
         public bool IsString { get; }
+        public BindingKind BindingKind { get; }
+        public string? BindingTypeName { get; }
         public string? CustomExpression { get; }
         public string FilterTargetName { get; }
         public string SortTargetName { get; }
+    }
+
+    private readonly struct BindingModel
+    {
+        public static BindingModel None => new(BindingKind.None, null);
+
+        public BindingModel(BindingKind kind, string? typeName)
+        {
+            Kind = kind;
+            TypeName = typeName;
+        }
+
+        public BindingKind Kind { get; }
+        public string? TypeName { get; }
     }
 
     private enum FilterKind
@@ -439,6 +643,26 @@ public sealed class AutoQueryGenerator : IIncrementalGenerator
         StringContains,
         NullableValue,
         Custom,
+    }
+
+    private enum BindingKind
+    {
+        None,
+        String,
+        Boolean,
+        Byte,
+        SByte,
+        Int16,
+        UInt16,
+        Int32,
+        UInt32,
+        Int64,
+        UInt64,
+        Single,
+        Double,
+        Decimal,
+        DateTime,
+        Enum,
     }
 
     private const string AttributeSource = @"// <auto-generated/>

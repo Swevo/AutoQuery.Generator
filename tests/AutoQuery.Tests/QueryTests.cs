@@ -1,7 +1,10 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Collections;
+using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.Loader;
 using System.Text;
 using AutoQuery;
 using Microsoft.CodeAnalysis;
@@ -410,7 +413,172 @@ public sealed class QueryTests
         Assert.Contains("x.Created <= CreatedTo.Value", code);
     }
 
-    private static GeneratorTestResult RunGenerator(string userSource)
+    [Fact]
+    public void QueryBinding_MethodsGeneratedWithoutAspNetDependency()
+    {
+        var result = RunGenerator("""
+            using System;
+            using AutoQuery;
+
+            public enum ProductStatus
+            {
+                Draft,
+                Active
+            }
+
+            public sealed class Product
+            {
+                public string? Name { get; set; }
+                public decimal Price { get; set; }
+                public ProductStatus Status { get; set; }
+            }
+
+            [QuerySpec(typeof(Product))]
+            public partial class ProductQuery
+            {
+                public string? Name { get; set; }
+                public decimal? MinPrice { get; set; }
+                public ProductStatus? Status { get; set; }
+                [QuerySort] public string? SortBy { get; set; }
+                public bool SortDescending { get; set; }
+                public int PageNumber { get; set; } = 1;
+                public int PageSize { get; set; } = 20;
+            }
+            """);
+
+        result.AssertNoErrors();
+        var code = result.GetGeneratedSource("ProductQuery.AutoQuery.g.cs");
+        Assert.Contains("public void BindFromQuery(global::System.Collections.Generic.IEnumerable<global::System.Collections.Generic.KeyValuePair<string, string?>> query)", code);
+        Assert.Contains("public static ProductQuery FromQuery(global::System.Collections.Generic.IEnumerable<global::System.Collections.Generic.KeyValuePair<string, string?>> query)", code);
+        Assert.Contains("public static ProductQuery FromQuery<TValue>(global::System.Collections.Generic.IEnumerable<global::System.Collections.Generic.KeyValuePair<string, TValue>> query)", code);
+        Assert.Contains("global::System.Decimal.TryParse", code);
+        Assert.Contains("global::System.Enum.TryParse<global::ProductStatus>", code);
+        Assert.DoesNotContain("Microsoft.AspNetCore", code);
+        Assert.DoesNotContain("StringValues", code);
+    }
+
+    [Fact]
+    public void FromQuery_BindsSupportedScalarValues()
+    {
+        var result = LoadGeneratedAssembly(QueryBindingSource);
+        result.AssertNoErrors();
+
+        var queryType = result.GetRequiredType("ProductQuery");
+        var spec = queryType
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Single(static method => method.Name == "FromQuery" && !method.IsGenericMethod)
+            .Invoke(null, new object[]
+            {
+                new Dictionary<string, string?>
+                {
+                    ["Name"] = "Laptop",
+                    ["MinPrice"] = "500.25",
+                    ["MaxPrice"] = "1500.50",
+                    ["IsActive"] = "true",
+                    ["CreatedFrom"] = "2026-01-02T03:04:05Z",
+                    ["Status"] = "Active",
+                    ["SortBy"] = "Name",
+                    ["SortDescending"] = "true",
+                    ["PageNumber"] = "2",
+                    ["PageSize"] = "10"
+                }
+            })!;
+
+        Assert.Equal("Laptop", queryType.GetProperty("Name")!.GetValue(spec));
+        Assert.Equal(500.25m, queryType.GetProperty("MinPrice")!.GetValue(spec));
+        Assert.Equal(1500.50m, queryType.GetProperty("MaxPrice")!.GetValue(spec));
+        Assert.Equal(true, queryType.GetProperty("IsActive")!.GetValue(spec));
+        Assert.Equal(DateTime.Parse("2026-01-02T03:04:05Z", null, System.Globalization.DateTimeStyles.RoundtripKind), queryType.GetProperty("CreatedFrom")!.GetValue(spec));
+        Assert.Equal("Active", queryType.GetProperty("Status")!.GetValue(spec)!.ToString());
+        Assert.Equal("Name", queryType.GetProperty("SortBy")!.GetValue(spec));
+        Assert.Equal(true, queryType.GetProperty("SortDescending")!.GetValue(spec));
+        Assert.Equal(2, queryType.GetProperty("PageNumber")!.GetValue(spec));
+        Assert.Equal(10, queryType.GetProperty("PageSize")!.GetValue(spec));
+    }
+
+    [Fact]
+    public void FromQuery_GenericEnumerableOverload_SkipsMalformedValuesAndUsesFirstEntry()
+    {
+        var result = LoadGeneratedAssembly(QueryBindingSource);
+        result.AssertNoErrors();
+
+        var queryType = result.GetRequiredType("ProductQuery");
+        var genericFromQuery = queryType
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Single(static method => method.Name == "FromQuery" && method.IsGenericMethodDefinition)
+            .MakeGenericMethod(typeof(string[]));
+
+        var spec = genericFromQuery.Invoke(null, new object[]
+        {
+            new Dictionary<string, string[]>
+            {
+                ["name"] = ["Camera"],
+                ["minPrice"] = ["not-a-number"],
+                ["createdFrom"] = ["2026-06-01T00:00:00Z", "2026-06-02T00:00:00Z"],
+                ["status"] = ["not-an-enum"],
+                ["sortDescending"] = ["not-a-bool"],
+                ["pageNumber"] = ["NaN"],
+                ["pageSize"] = ["50"],
+                ["unknown"] = ["ignored"]
+            }
+        })!;
+
+        Assert.Equal("Camera", queryType.GetProperty("Name")!.GetValue(spec));
+        Assert.Null(queryType.GetProperty("MinPrice")!.GetValue(spec));
+        Assert.Equal(DateTime.Parse("2026-06-01T00:00:00Z", null, System.Globalization.DateTimeStyles.RoundtripKind), queryType.GetProperty("CreatedFrom")!.GetValue(spec));
+        Assert.Null(queryType.GetProperty("Status")!.GetValue(spec));
+        Assert.Equal(false, queryType.GetProperty("SortDescending")!.GetValue(spec));
+        Assert.Equal(1, queryType.GetProperty("PageNumber")!.GetValue(spec));
+        Assert.Equal(50, queryType.GetProperty("PageSize")!.GetValue(spec));
+    }
+
+    [Fact]
+    public void BindFromQuery_AndApply_WorkTogether()
+    {
+        var result = LoadGeneratedAssembly(QueryBindingSource);
+        result.AssertNoErrors();
+
+        var assembly = result.Assembly;
+        var queryType = result.GetRequiredType("ProductQuery");
+        var query = Activator.CreateInstance(queryType)!;
+        queryType
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Single(static method => method.Name == "BindFromQuery" && method.IsGenericMethodDefinition)
+            .MakeGenericMethod(typeof(string[]))
+            .Invoke(query, new object[]
+            {
+                new Dictionary<string, string[]>
+                {
+                    ["name"] = ["Laptop"],
+                    ["isActive"] = ["true"],
+                    ["sortBy"] = ["Price"],
+                    ["sortDescending"] = ["true"],
+                    ["pageNumber"] = ["2"],
+                    ["pageSize"] = ["1"]
+                }
+            });
+
+        var entityType = result.GetRequiredType("Product");
+        var products = CreateEntityList(
+            entityType,
+            CreateProduct(entityType, "Laptop Pro", 1500m, true, new DateTime(2026, 6, 2, 0, 0, 0, DateTimeKind.Utc), "Active"),
+            CreateProduct(entityType, "Laptop Air", 900m, true, new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc), "Active"),
+            CreateProduct(entityType, "Mouse", 50m, true, new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc), "Draft"));
+
+        var queryable = typeof(Queryable)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Single(static method => method.Name == "AsQueryable" && method.IsGenericMethodDefinition && method.GetParameters().Length == 1)
+            .MakeGenericMethod(entityType)
+            .Invoke(null, new object[] { products })!;
+
+        var applied = (IEnumerable)queryType.GetMethod("Apply")!.Invoke(query, [queryable])!;
+        var results = applied.Cast<object>().ToArray();
+
+        Assert.Single(results);
+        Assert.Equal("Laptop Air", entityType.GetProperty("Name")!.GetValue(results[0]));
+    }
+
+    private static GeneratedAssemblyTestResult RunGenerator(string userSource)
     {
         const string linqStub = """
             #nullable enable
@@ -438,12 +606,26 @@ public sealed class QueryTests
             }
             """;
 
-        var source = SourceText.From("#nullable enable\n" + userSource + "\n" + linqStub, Encoding.UTF8);
+        return RunGeneratorCore(
+            "#nullable enable\n" + userSource + "\n" + linqStub,
+            GetStubReferences(),
+            emitAssembly: false);
+    }
+
+    private static GeneratedAssemblyTestResult LoadGeneratedAssembly(string userSource)
+        => RunGeneratorCore(
+            "#nullable enable\n" + userSource + "\n",
+            GetRuntimeReferences(),
+            emitAssembly: true);
+
+    private static GeneratedAssemblyTestResult RunGeneratorCore(string sourceText, IEnumerable<MetadataReference> references, bool emitAssembly)
+    {
+        var source = SourceText.From(sourceText, Encoding.UTF8);
         var syntaxTree = CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.Latest));
         var compilation = CSharpCompilation.Create(
-            assemblyName: "AutoQuery.Tests.Generated",
-            syntaxTrees: new[] { syntaxTree },
-            references: GetReferences(),
+            assemblyName: "AutoQuery.Tests.Generated." + Guid.NewGuid().ToString("N"),
+            syntaxTrees: [syntaxTree],
+            references: references,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         var generator = new AutoQueryGenerator();
@@ -454,23 +636,103 @@ public sealed class QueryTests
         var generatedSources = runResult.Results
             .SelectMany(static result => result.GeneratedSources)
             .ToDictionary(static sourceResult => sourceResult.HintName, static sourceResult => sourceResult.SourceText.ToString(), StringComparer.Ordinal);
+        var diagnostics = runResult.Diagnostics.AddRange(updatedCompilation.GetDiagnostics());
 
-        return new GeneratorTestResult(
-            generatedSources,
-            runResult.Diagnostics.AddRange(updatedCompilation.GetDiagnostics()));
+        if (!emitAssembly)
+        {
+            return new GeneratedAssemblyTestResult(generatedSources, diagnostics, null);
+        }
+
+        using var assemblyStream = new MemoryStream();
+        using var symbolsStream = new MemoryStream();
+        var emitResult = updatedCompilation.Emit(assemblyStream, symbolsStream);
+        Assert.True(emitResult.Success, string.Join(Environment.NewLine, emitResult.Diagnostics));
+
+        assemblyStream.Position = 0;
+        symbolsStream.Position = 0;
+        var loadContext = new AssemblyLoadContext("AutoQuery.Tests." + Guid.NewGuid().ToString("N"), isCollectible: true);
+        var assembly = loadContext.LoadFromStream(assemblyStream, symbolsStream);
+
+        return new GeneratedAssemblyTestResult(generatedSources, diagnostics, assembly);
     }
 
-    private static IEnumerable<MetadataReference> GetReferences()
+    private static IEnumerable<MetadataReference> GetStubReferences()
     {
         yield return MetadataReference.CreateFromFile(typeof(object).Assembly.Location);
         yield return MetadataReference.CreateFromFile(typeof(Attribute).Assembly.Location);
         yield return MetadataReference.CreateFromFile(Assembly.Load("System.Runtime").Location);
     }
 
-    private sealed record GeneratorTestResult(
-        IReadOnlyDictionary<string, string> GeneratedSources,
-        ImmutableArray<Diagnostic> Diagnostics)
+    private static IEnumerable<MetadataReference> GetRuntimeReferences()
+        => ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES"))!
+            .Split(Path.PathSeparator)
+            .Select(static path => MetadataReference.CreateFromFile(path));
+
+    private static IList CreateEntityList(Type entityType, params object[] items)
     {
+        var list = (IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(entityType))!;
+        foreach (var item in items)
+        {
+            list.Add(item);
+        }
+
+        return list;
+    }
+
+    private static object CreateProduct(Type entityType, string name, decimal price, bool isActive, DateTime created, string status)
+    {
+        var instance = Activator.CreateInstance(entityType)!;
+        entityType.GetProperty("Name")!.SetValue(instance, name);
+        entityType.GetProperty("Price")!.SetValue(instance, price);
+        entityType.GetProperty("IsActive")!.SetValue(instance, isActive);
+        entityType.GetProperty("Created")!.SetValue(instance, created);
+        entityType.GetProperty("Status")!.SetValue(instance, Enum.Parse(entityType.Assembly.GetType("ProductStatus")!, status));
+        return instance;
+    }
+
+    private const string QueryBindingSource = """
+        using System;
+        using AutoQuery;
+
+        public enum ProductStatus
+        {
+            Draft,
+            Active
+        }
+
+        public sealed class Product
+        {
+            public string? Name { get; set; }
+            public decimal Price { get; set; }
+            public bool IsActive { get; set; }
+            public DateTime Created { get; set; }
+            public ProductStatus Status { get; set; }
+        }
+
+        [QuerySpec(typeof(Product))]
+        public partial class ProductQuery
+        {
+            public string? Name { get; set; }
+            public decimal? MinPrice { get; set; }
+            public decimal? MaxPrice { get; set; }
+            public bool? IsActive { get; set; }
+            public DateTime? CreatedFrom { get; set; }
+            public ProductStatus? Status { get; set; }
+            [QuerySort] public string? SortBy { get; set; }
+            public bool SortDescending { get; set; }
+            public int PageNumber { get; set; } = 1;
+            public int PageSize { get; set; } = 20;
+        }
+        """;
+
+    private record GeneratedAssemblyTestResult(
+        IReadOnlyDictionary<string, string> GeneratedSources,
+        ImmutableArray<Diagnostic> Diagnostics,
+        Assembly? Assembly)
+    {
+        public Type GetRequiredType(string typeName)
+            => Assembly?.GetType(typeName) ?? throw new InvalidOperationException($"Type '{typeName}' was not loaded.");
+
         public string GetGeneratedSource(string hintName)
             => GeneratedSources.FirstOrDefault(pair => pair.Key.EndsWith(hintName, StringComparison.Ordinal)).Value ?? string.Empty;
 
