@@ -340,6 +340,20 @@ The generic overload is what lets `Request.Query` bind cleanly: `IQueryCollectio
 
 ---
 
+## Related Packages
+
+| Package | Downloads | Description |
+|---|---|---|
+| [AutoWire](https://www.nuget.org/packages/AutoWire) | [![Downloads](https://img.shields.io/nuget/dt/AutoWire.svg)](https://www.nuget.org/packages/AutoWire) | Compile-time dependency injection auto-registration for  |
+| [AutoMap.Generator](https://www.nuget.org/packages/AutoMap.Generator) | [![Downloads](https://img.shields.io/nuget/dt/AutoMap.Generator.svg)](https://www.nuget.org/packages/AutoMap.Generator) | Compile-time object mapping for  |
+| [AutoArchitecture](https://www.nuget.org/packages/AutoArchitecture) | [![Downloads](https://img.shields.io/nuget/dt/AutoArchitecture.svg)](https://www.nuget.org/packages/AutoArchitecture) | Compile-time architecture/dependency-rule enforcement for  |
+| [AutoHttpClient.Generator](https://www.nuget.org/packages/AutoHttpClient.Generator) | [![Downloads](https://img.shields.io/nuget/dt/AutoHttpClient.Generator.svg)](https://www.nuget.org/packages/AutoHttpClient.Generator) | Compile-time typed HTTP client generation for  |
+| [AutoDispatch.Generator](https://www.nuget.org/packages/AutoDispatch.Generator) | [![Downloads](https://img.shields.io/nuget/dt/AutoDispatch.Generator.svg)](https://www.nuget.org/packages/AutoDispatch.Generator) | Compile-time CQRS dispatcher for  |
+| [AutoLog.Generator](https://www.nuget.org/packages/AutoLog.Generator) | [![Downloads](https://img.shields.io/nuget/dt/AutoLog.Generator.svg)](https://www.nuget.org/packages/AutoLog.Generator) | Compile-time high-performance logging for  |
+| [AutoValidate.Generator](https://www.nuget.org/packages/AutoValidate.Generator) | [![Downloads](https://img.shields.io/nuget/dt/AutoValidate.Generator.svg)](https://www.nuget.org/packages/AutoValidate.Generator) | Compile-time FluentValidation wiring for  |
+
+---
+
 ## License
 
 MIT.
